@@ -7,7 +7,7 @@
 
 ---
 
-## 1. Tôi đã làm gì trong lab này? (150 từ)
+## 1. Tôi đã làm gì trong lab này? 
 
 Trong lab này, với vai trò Documentation Owner, tôi chịu trách nhiệm chính về việc thiết kế cấu trúc dữ liệu (indexing) và ghi chép toàn bộ quá trình phát triển hệ thống. Trong Sprint 1, tôi đã phối hợp với Tech Lead để đưa ra quyết định về chiến lược chunking (400 tokens, 80 overlap) và định nghĩa bộ Metadata gồm 5 trường (`source`, `section`, `effective_date`, `department`, `access`) để phục vụ cho việc lọc và trích dẫn nguồn. 
 
@@ -15,7 +15,7 @@ Trong Sprint 3 và 4, tôi tập trung vào việc hoàn thiện `docs/architect
 
 ---
 
-## 2. Điều tôi hiểu rõ hơn sau lab này (150 từ)
+## 2. Điều tôi hiểu rõ hơn sau lab này 
 
 Sau lab này, tôi đã hiểu sâu sắc hơn về tầm quan trọng của **Metadata-driven Retrieval** và sự đánh đổi giữa **Dense vs Hybrid Retrieval**. Trước đây, tôi nghĩ rằng cứ dùng Embedding Model mạnh (như OpenAI) là đủ. Tuy nhiên, khi thực hiện Lab, tôi nhận ra rằng Metadata không chỉ để dẫn nguồn mà còn là "la bàn" để LLM định vị đúng phiên bản tài liệu (như chính sách v3 vs v4). 
 
@@ -23,7 +23,7 @@ Sau lab này, tôi đã hiểu sâu sắc hơn về tầm quan trọng của **M
 
 ---
 
-## 3. Điều ngạc nhiên hoặc gặp khó khăn (150 từ)
+## 3. Điều ngạc nhiên hoặc gặp khó khăn 
 
 Điều làm tôi ngạc nhiên nhất là khả năng **abstain (từ chối trả lời)** của model khi gặp thông tin thiếu. Ban đầu, tôi lo lắng model sẽ "bịa" (hallucinate) ra các quy định không có thật để làm hài lòng người dùng. Tuy nhiên, nhờ việc tinh chỉnh prompt "Answer only from context" và thiết lập `temperature = 0`, hệ thống đã trả lời "Tôi không biết" rất dứt khoát ở câu `gq07` (về mức phạt SLA) và `q10` (về hoàn tiền VIP). 
 
@@ -31,7 +31,7 @@ Khó khăn lớn nhất  gặp phải là việc debug lỗi **OpenAI API 400** 
 
 ---
 
-## 4. Phân tích một câu hỏi trong grading (200 từ)
+## 4. Phân tích một câu hỏi trong grading 
 
 Phân tích câu **gq06**: *"Lúc 2 giờ sáng xảy ra sự cố P1, on-call engineer cần cấp quyền tạm thời cho một engineer xử lý incident. Quy trình cụ thể như thế nào và quyền này tồn tại bao lâu?"*
 
@@ -43,7 +43,7 @@ Phân tích câu **gq06**: *"Lúc 2 giờ sáng xảy ra sự cố P1, on-call e
 
 ---
 
-## 5. Nếu có thêm thời gian, tôi sẽ làm gì? (100 từ)
+## 5. Nếu có thêm thời gian, tôi sẽ làm gì? 
 
 Nếu có thêm thời gian, tôi sẽ đề xuất thực hiện **Reranking với Cross-Encoder** (như `BGE-Reranker`). Dựa trên bằng chứng từ Scorecard, điểm Completeness của chúng ta vẫn còn dao động quanh mức 3.0 - 3.6/5. Điều này cho thấy Top-3 chunks hiện tại đôi khi chứa các chunk "gần đúng" nhưng không chứa đủ toàn bộ chi tiết cần thiết. Việc tăng `top_k_search` lên 20 và dùng Reranker để chọn ra 3 chunk "đậm đặc" nhất chắc chắn sẽ giúp cải thiện điểm Completeness mà không làm loãng prompt. Ngoài ra, tôi muốn thử nghiệm **Query Expansion** để xử lý các câu hỏi dùng từ lóng hoặc từ viết tắt mà trong docs chưa cập nhật hết.
 
