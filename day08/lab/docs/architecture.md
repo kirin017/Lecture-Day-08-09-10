@@ -18,7 +18,7 @@
 ```
 
 **Mô tả ngắn gọn:**
-> TODO: Mô tả hệ thống trong 2-3 câu. Nhóm xây gì? Cho ai dùng? Giải quyết vấn đề gì?
+Hệ thống là một trợ lý nội bộ thông minh cho khối CS và IT Helpdesk, cho phép tra cứu nhanh các chính sách, quy trình và SLA từ các tài liệu nội bộ. Hệ thống sử dụng kiến trúc RAG (Retrieval-Augmented Generation) để đảm bảo câu trả lời chính xác, có dẫn nguồn và hạn chế tình trạng ảo giác của AI.
 
 ---
 
@@ -27,22 +27,22 @@
 ### Tài liệu được index
 | File | Nguồn | Department | Số chunk |
 |------|-------|-----------|---------|
-| `policy_refund_v4.txt` | policy/refund-v4.pdf | CS | TODO |
-| `sla_p1_2026.txt` | support/sla-p1-2026.pdf | IT | TODO |
-| `access_control_sop.txt` | it/access-control-sop.md | IT Security | TODO |
-| `it_helpdesk_faq.txt` | support/helpdesk-faq.md | IT | TODO |
-| `hr_leave_policy.txt` | hr/leave-policy-2026.pdf | HR | TODO |
+| `policy_refund_v4.txt` | policy/refund-v4.pdf | CS | 6 |
+| `sla_p1_2026.txt` | support/sla-p1-2026.pdf | IT | 5 |
+| `access_control_sop.txt` | it/access-control-sop.md | IT Security | 7 |
+| `it_helpdesk_faq.txt` | support/helpdesk-faq.md | IT | 6 |
+| `hr_leave_policy.txt` | hr/leave-policy-2026.pdf | HR | 5 |
 
 ### Quyết định chunking
 | Tham số | Giá trị | Lý do |
 |---------|---------|-------|
-| Chunk size | TODO tokens | TODO |
-| Overlap | TODO tokens | TODO |
-| Chunking strategy | Heading-based / paragraph-based | TODO |
-| Metadata fields | source, section, effective_date, department, access | Phục vụ filter, freshness, citation |
+| Chunk size | 400 tokens | Cân bằng giữa việc giữ đủ ngữ cảnh và tránh làm loãng thông tin. |
+| Overlap | 80 tokens | Đảm bảo không mất thông tin tại ranh giới giữa các chunk. |
+| Chunking strategy | Section-based + Size-based | Ưu tiên cắt theo heading "=== Section ===" để giữ tính toàn vẹn của điều khoản, sau đó mới cắt theo kích thước nếu section quá dài. |
+| Metadata fields | source, section, effective_date, department, access | Phục vụ filter, freshness, citation và kiểm soát quyền truy cập. |
 
 ### Embedding model
-- **Model**: TODO (OpenAI text-embedding-3-small / paraphrase-multilingual-MiniLM-L12-v2)
+- **Model**: OpenAI `text-embedding-3-small` (1536 dimensions)
 - **Vector store**: ChromaDB (PersistentClient)
 - **Similarity metric**: Cosine
 
@@ -61,15 +61,14 @@
 ### Variant (Sprint 3)
 | Tham số | Giá trị | Thay đổi so với baseline |
 |---------|---------|------------------------|
-| Strategy | TODO (hybrid / dense) | TODO |
-| Top-k search | TODO | TODO |
-| Top-k select | TODO | TODO |
-| Rerank | TODO (cross-encoder / MMR) | TODO |
-| Query transform | TODO (expansion / HyDE / decomposition) | TODO |
+| Strategy | Hybrid (Dense + BM25) | Kết hợp vector search và keyword search. |
+| Top-k search | 10 | Giữ nguyên để so sánh công bằng. |
+| Top-k select | 3 | Giữ nguyên. |
+| Rerank | Không | Chưa áp dụng. |
+| Query transform | Không | Chưa áp dụng. |
 
 **Lý do chọn variant này:**
-> TODO: Giải thích tại sao chọn biến này để tune.
-> Ví dụ: "Chọn hybrid vì corpus có cả câu tự nhiên (policy) lẫn mã lỗi và tên chuyên ngành (SLA ticket P1, ERR-403)."
+Chọn hybrid vì tập tài liệu (corpus) chứa nhiều thuật ngữ chuyên ngành, mã lỗi (như ERR-403) và tên viết tắt (SLA, P1). Hybrid retrieval giúp cải thiện khả năng tìm kiếm chính xác khi người dùng sử dụng các từ khóa cụ thể này, đồng thời vẫn giữ được khả năng tìm kiếm theo ngữ nghĩa của dense search.
 
 ---
 
@@ -78,9 +77,10 @@
 ### Grounded Prompt Template
 ```
 Answer only from the retrieved context below.
-If the context is insufficient, say you do not know.
-Cite the source field when possible.
+If the context is insufficient to answer the question, say you do not know and do not make up information.
+Cite the source field (in brackets like [1]) when possible.
 Keep your answer short, clear, and factual.
+Respond in the same language as the question.
 
 Question: {query}
 
@@ -96,7 +96,7 @@ Answer:
 ### LLM Configuration
 | Tham số | Giá trị |
 |---------|---------|
-| Model | TODO (gpt-4o-mini / gemini-1.5-flash) |
+| Model | `gpt-4o-mini` |
 | Temperature | 0 (để output ổn định cho eval) |
 | Max tokens | 512 |
 

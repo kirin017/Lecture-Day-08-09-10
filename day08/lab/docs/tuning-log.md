@@ -7,100 +7,86 @@
 
 ## Baseline (Sprint 2)
 
-**Ngày:** ___________  
+**Ngày:** 2026-04-13  
 **Config:**
 ```
 retrieval_mode = "dense"
-chunk_size = _____ tokens
-overlap = _____ tokens
+chunk_size = 400 tokens
+overlap = 80 tokens
 top_k_search = 10
 top_k_select = 3
 use_rerank = False
-llm_model = _____
+llm_model = "gpt-4o-mini"
 ```
 
 **Scorecard Baseline:**
 | Metric | Average Score |
 |--------|--------------|
-| Faithfulness | ? /5 |
-| Answer Relevance | ? /5 |
-| Context Recall | ? /5 |
-| Completeness | ? /5 |
+| Faithfulness | 4.90 /5 |
+| Answer Relevance | 4.80 /5 |
+| Context Recall | 5.00 /5 |
+| Completeness | 3.60 /5 |
 
 **Câu hỏi yếu nhất (điểm thấp):**
-> TODO: Liệt kê 2-3 câu hỏi có điểm thấp nhất và lý do tại sao.
-> Ví dụ: "q07 (Approval Matrix) - context recall = 1/5 vì dense bỏ lỡ alias."
+1. **q07 (Approval Matrix)** - Completeness = 2/5. Mặc dù retrieval đúng context nhưng LLM chưa trích xuất được thông tin về việc tài liệu đã đổi tên một cách rõ ràng như mong đợi.
+2. **q10 (Hoàn tiền VIP)** - Completeness = 3/5. Model nhận diện đúng là không có thông tin cụ thể nhưng phần giải thích chưa bao quát hết các khía cạnh của chính sách hiện hành.
 
 **Giả thuyết nguyên nhân (Error Tree):**
 - [ ] Indexing: Chunking cắt giữa điều khoản
-- [ ] Indexing: Metadata thiếu effective_date
-- [ ] Retrieval: Dense bỏ lỡ exact keyword / alias
-- [ ] Retrieval: Top-k quá ít → thiếu evidence
-- [ ] Generation: Prompt không đủ grounding
-- [ ] Generation: Context quá dài → lost in the middle
+- [x] Retrieval: Dense search đã làm rất tốt (Recall 5.0)
+- [x] Generation: Completeness thấp do prompt chưa khuyến khích model phân tích sâu các trường hợp ngoại lệ hoặc sự thay đổi thông tin (alias).
 
 ---
 
 ## Variant 1 (Sprint 3)
 
-**Ngày:** ___________  
-**Biến thay đổi:** ___________  
+**Ngày:** 2026-04-13  
+**Biến thay đổi:** `retrieval_mode = "hybrid"`  
 **Lý do chọn biến này:**
-> TODO: Giải thích theo evidence từ baseline results.
-> Ví dụ: "Chọn hybrid vì q07 (alias query) và q09 (mã lỗi ERR-403) đều thất bại với dense.
-> Corpus có cả ngôn ngữ tự nhiên (policy) lẫn tên riêng/mã lỗi (ticket code, SLA label)."
+Chọn hybrid vì q07 liên quan đến việc tìm kiếm theo alias/tên cũ ("Approval Matrix"). Giả thuyết là hybrid (kết hợp keyword search) sẽ giúp mang lại context có độ liên quan cao hơn cho các câu hỏi chứa keyword đặc thù.
 
 **Config thay đổi:**
 ```
-retrieval_mode = "hybrid"   # hoặc biến khác
+retrieval_mode = "hybrid"
 # Các tham số còn lại giữ nguyên như baseline
 ```
 
 **Scorecard Variant 1:**
 | Metric | Baseline | Variant 1 | Delta |
 |--------|----------|-----------|-------|
-| Faithfulness | ?/5 | ?/5 | +/- |
-| Answer Relevance | ?/5 | ?/5 | +/- |
-| Context Recall | ?/5 | ?/5 | +/- |
-| Completeness | ?/5 | ?/5 | +/- |
+| Faithfulness | 4.90/5 | 5.00/5 | +0.10 |
+| Answer Relevance | 4.80/5 | 4.70/5 | -0.10 |
+| Context Recall | 5.00/5 | 5.00/5 | 0.00 |
+| Completeness | 3.60/5 | 3.00/5 | -0.60 |
 
 **Nhận xét:**
-> TODO: Variant 1 cải thiện ở câu nào? Tại sao?
-> Có câu nào kém hơn không? Tại sao?
+- Variant 1 (Hybrid) cải thiện nhẹ về tính trung thực (Faithfulness) nhờ việc truy xuất context có keyword chính xác hơn, giúp LLM ít phải suy luận ngoài context.
+- Tuy nhiên, Completeness bị giảm đáng kể ở một số câu (như q06 và q09). Đặc biệt ở q09 (ERR-403), variant hybrid khiến model trả về "Tôi không biết" (abstain hoàn toàn), dẫn đến điểm completeness thấp nhưng faithfulness tuyệt đối.
 
 **Kết luận:**
-> TODO: Variant 1 có tốt hơn baseline không?
-> Bằng chứng là gì? (điểm số, câu hỏi cụ thể)
+Variant 1 không thực sự tốt hơn baseline về mặt tổng thể (điểm completeness giảm). Trong corpus quy mô nhỏ này, dense search của OpenAI (`text-embedding-3-small`) đã đủ mạnh để xử lý hầu hết các query kể cả query có alias. Hybrid có thể hữu ích hơn khi corpus lớn hơn hoặc chứa nhiều mã kỹ thuật cực kỳ đặc thù mà embedding model chưa được fine-tune.
 
 ---
 
 ## Variant 2 (nếu có thời gian)
 
-**Biến thay đổi:** ___________  
+**Biến thay đổi:** Rerank (Cross-Encoder)
 **Config:**
 ```
-# TODO
+use_rerank = True
+top_k_search = 20
+top_k_select = 3
 ```
-
-**Scorecard Variant 2:**
-| Metric | Baseline | Variant 1 | Variant 2 | Best |
-|--------|----------|-----------|-----------|------|
-| Faithfulness | ? | ? | ? | ? |
-| Answer Relevance | ? | ? | ? | ? |
-| Context Recall | ? | ? | ? | ? |
-| Completeness | ? | ? | ? | ? |
 
 ---
 
 ## Tóm tắt học được
 
-> TODO (Sprint 4): Điền sau khi hoàn thành evaluation.
-
 1. **Lỗi phổ biến nhất trong pipeline này là gì?**
-   > _____________
+   > Lỗi Completeness: Model thường trả lời đúng trọng tâm nhưng bỏ lỡ các chi tiết phụ hoặc không giải thích rõ ràng các trường hợp "không tìm thấy thông tin" (abstain).
 
 2. **Biến nào có tác động lớn nhất tới chất lượng?**
-   > _____________
+   > Trong bài lab này, chất lượng của Embedding Model (dense retrieval) và Prompt Engineering có tác động lớn nhất. Việc đổi sang Hybrid không mang lại cải thiện đột phá do tập dữ liệu nhỏ.
 
 3. **Nếu có thêm 1 giờ, nhóm sẽ thử gì tiếp theo?**
-   > _____________
+   > Thử nghiệm Reranking (Cross-Encoder) sau khi retrieve để lọc ra 3 chunk thực sự chất lượng nhất, và tinh chỉnh Grounded Prompt để cải thiện khả năng trả lời các câu hỏi về alias hoặc thiếu context.
