@@ -25,6 +25,12 @@ import os
 from typing import List, Dict, Any, Optional, Tuple
 from dotenv import load_dotenv
 
+import chromadb
+from openai import OpenAI
+from rank_bm25 import BM25Okapi
+
+from index import get_embedding, CHROMA_DB_DIR
+
 load_dotenv()
 
 # =============================================================================
@@ -35,6 +41,9 @@ TOP_K_SEARCH = 10    # Số chunk lấy từ vector store trước rerank (searc
 TOP_K_SELECT = 3     # Số chunk gửi vào prompt sau rerank/select (top-3 sweet spot)
 
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
+
+_BM25_INDEX: Optional[BM25Okapi] = None
+_BM25_CHUNKS: List[Dict[str, Any]] = []
 
 
 # =============================================================================
@@ -76,16 +85,59 @@ def retrieve_dense(query: str, top_k: int = TOP_K_SEARCH) -> List[Dict[str, Any]
         # Lưu ý: distances trong ChromaDB cosine = 1 - similarity
         # Score = 1 - distance
     """
-    raise NotImplementedError(
-        "TODO Sprint 2: Implement retrieve_dense().\n"
-        "Tham khảo comment trong hàm để biết cách query ChromaDB."
+    client = chromadb.PersistentClient(path=str(CHROMA_DB_DIR))
+    collection = client.get_collection("rag_lab")
+
+    query_embedding = get_embedding(query)
+    results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=top_k,
+        include=["documents", "metadatas", "distances"],
     )
+
+    docs = results.get("documents", [[]])[0]
+    metas = results.get("metadatas", [[]])[0]
+    distances = results.get("distances", [[]])[0]
+
+    chunks: List[Dict[str, Any]] = []
+    for doc, meta, distance in zip(docs, metas, distances):
+        chunks.append(
+            {
+                "text": doc,
+                "metadata": meta or {},
+                "score": 1 - float(distance),
+            }
+        )
+
+    return chunks
 
 
 # =============================================================================
 # RETRIEVAL — SPARSE / BM25 (Keyword Search)
 # Dùng cho Sprint 3 Variant hoặc kết hợp Hybrid
 # =============================================================================
+
+def _ensure_bm25_index() -> None:
+    global _BM25_INDEX, _BM25_CHUNKS
+
+    if _BM25_INDEX is not None:
+        return
+
+    client = chromadb.PersistentClient(path=str(CHROMA_DB_DIR))
+    collection = client.get_collection("rag_lab")
+    results = collection.get(include=["documents", "metadatas"])
+
+    documents = results.get("documents", [])
+    metadatas = results.get("metadatas", [])
+
+    _BM25_CHUNKS = [
+        {"text": doc, "metadata": (meta or {})}
+        for doc, meta in zip(documents, metadatas)
+    ]
+
+    tokenized_corpus = [doc.lower().split() for doc in documents]
+    _BM25_INDEX = BM25Okapi(tokenized_corpus) if tokenized_corpus else None
+
 
 def retrieve_sparse(query: str, top_k: int = TOP_K_SEARCH) -> List[Dict[str, Any]]:
     """
@@ -109,10 +161,32 @@ def retrieve_sparse(query: str, top_k: int = TOP_K_SEARCH) -> List[Dict[str, Any
         scores = bm25.get_scores(tokenized_query)
         top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
     """
-    # TODO Sprint 3: Implement BM25 search
-    # Tạm thời return empty list
-    print("[retrieve_sparse] Chưa implement — Sprint 3")
-    return []
+    _ensure_bm25_index()
+
+    if not _BM25_CHUNKS:
+        return []
+
+    tokenized_query = query.lower().split()
+    scores = _BM25_INDEX.get_scores(tokenized_query) if _BM25_INDEX else []
+
+    top_indices = sorted(
+        range(len(scores)),
+        key=lambda i: scores[i],
+        reverse=True,
+    )[:top_k]
+
+    results: List[Dict[str, Any]] = []
+    for idx in top_indices:
+        chunk = _BM25_CHUNKS[idx]
+        results.append(
+            {
+                "text": chunk["text"],
+                "metadata": chunk["metadata"],
+                "score": float(scores[idx]),
+            }
+        )
+
+    return results
 
 
 # =============================================================================
@@ -148,10 +222,39 @@ def retrieve_hybrid(
     - Corpus có cả câu tự nhiên VÀ tên riêng, mã lỗi, điều khoản
     - Query như "Approval Matrix" khi doc đổi tên thành "Access Control SOP"
     """
-    # TODO Sprint 3: Implement hybrid RRF
-    # Tạm thời fallback về dense
-    print("[retrieve_hybrid] Chưa implement RRF — fallback về dense")
-    return retrieve_dense(query, top_k)
+    dense_results = retrieve_dense(query, top_k=top_k)
+    sparse_results = retrieve_sparse(query, top_k=top_k)
+
+    if not sparse_results:
+        return dense_results
+
+    k_rrf = 60
+
+    dense_rank = {item["text"]: rank for rank, item in enumerate(dense_results, start=1)}
+    sparse_rank = {item["text"]: rank for rank, item in enumerate(sparse_results, start=1)}
+
+    merged_by_text: Dict[str, Dict[str, Any]] = {}
+    for item in dense_results + sparse_results:
+        merged_by_text[item["text"]] = {
+            "text": item["text"],
+            "metadata": item.get("metadata", {}),
+            "score": 0.0,
+        }
+
+    for text, item in merged_by_text.items():
+        d_rank = dense_rank.get(text)
+        s_rank = sparse_rank.get(text)
+
+        score = 0.0
+        if d_rank is not None:
+            score += dense_weight * (1 / (k_rrf + d_rank))
+        if s_rank is not None:
+            score += sparse_weight * (1 / (k_rrf + s_rank))
+
+        item["score"] = score
+
+    merged = sorted(merged_by_text.values(), key=lambda x: x["score"], reverse=True)
+    return merged[:top_k]
 
 
 # =============================================================================
@@ -316,10 +419,18 @@ def call_llm(prompt: str) -> str:
 
     Lưu ý: Dùng temperature=0 hoặc thấp để output ổn định cho evaluation.
     """
-    raise NotImplementedError(
-        "TODO Sprint 2: Implement call_llm().\n"
-        "Chọn Option A (OpenAI) hoặc Option B (Gemini) trong TODO comment."
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("Thiếu OPENAI_API_KEY trong .env")
+
+    client = OpenAI(api_key=api_key)
+    response = client.chat.completions.create(
+        model=LLM_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0,
+        max_tokens=512,
     )
+    return response.choices[0].message.content or ""
 
 
 def rag_answer(

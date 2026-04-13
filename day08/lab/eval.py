@@ -43,11 +43,11 @@ BASELINE_CONFIG = {
 # Cấu hình variant (Sprint 3 — điều chỉnh theo lựa chọn của nhóm)
 # TODO Sprint 4: Cập nhật VARIANT_CONFIG theo variant nhóm đã implement
 VARIANT_CONFIG = {
-    "retrieval_mode": "hybrid",   # Hoặc "dense" nếu chỉ đổi rerank
+    "retrieval_mode": "hybrid",
     "top_k_search": 10,
     "top_k_select": 3,
-    "use_rerank": True,           # Hoặc False nếu variant là hybrid không rerank
-    "label": "variant_hybrid_rerank",
+    "use_rerank": False,
+    "label": "variant_hybrid",
 }
 
 
@@ -88,11 +88,39 @@ def score_faithfulness(
 
     Trả về dict với: score (1-5) và notes (lý do)
     """
-    # TODO Sprint 4: Implement scoring
-    # Tạm thời trả về None (yêu cầu chấm thủ công)
+    if answer.startswith("ERROR:") or answer == "PIPELINE_NOT_IMPLEMENTED":
+        return {"score": 1, "notes": "Pipeline error hoặc chưa implement"}
+
+    if not chunks_used:
+        return {"score": 1, "notes": "Không có retrieved context để đối chiếu"}
+
+    answer_lower = answer.lower()
+    abstain_markers = ["không đủ dữ liệu", "không có thông tin", "không biết", "do not know"]
+    if any(marker in answer_lower for marker in abstain_markers):
+        return {"score": 5, "notes": "Abstain đúng theo grounded rule"}
+
+    context_text = " ".join(c.get("text", "") for c in chunks_used).lower()
+    answer_tokens = [t for t in answer_lower.replace("\n", " ").split() if len(t) >= 4]
+    if not answer_tokens:
+        return {"score": 2, "notes": "Answer quá ngắn/khó đối chiếu"}
+
+    overlap = sum(1 for t in answer_tokens if t in context_text)
+    ratio = overlap / len(answer_tokens)
+
+    if ratio >= 0.75:
+        score = 5
+    elif ratio >= 0.55:
+        score = 4
+    elif ratio >= 0.40:
+        score = 3
+    elif ratio >= 0.25:
+        score = 2
+    else:
+        score = 1
+
     return {
-        "score": None,
-        "notes": "TODO: Chấm thủ công hoặc implement LLM-as-Judge",
+        "score": score,
+        "notes": f"Token overlap with context: {overlap}/{len(answer_tokens)} ({ratio:.2f})",
     }
 
 
@@ -113,9 +141,35 @@ def score_answer_relevance(
 
     TODO Sprint 4: Implement tương tự score_faithfulness
     """
+    if answer.startswith("ERROR:") or answer == "PIPELINE_NOT_IMPLEMENTED":
+        return {"score": 1, "notes": "Pipeline error hoặc chưa implement"}
+
+    answer_lower = answer.lower()
+    if any(marker in answer_lower for marker in ["không đủ dữ liệu", "không có thông tin", "không biết", "do not know"]):
+        return {"score": 4, "notes": "Abstain response (relevant when context missing)"}
+
+    query_tokens = {t for t in query.lower().replace("?", " ").split() if len(t) >= 3}
+    answer_tokens = {t for t in answer_lower.replace("\n", " ").split() if len(t) >= 3}
+    if not query_tokens:
+        return {"score": 3, "notes": "Không có token query để so khớp"}
+
+    overlap = len(query_tokens.intersection(answer_tokens))
+    ratio = overlap / len(query_tokens)
+
+    if ratio >= 0.6:
+        score = 5
+    elif ratio >= 0.4:
+        score = 4
+    elif ratio >= 0.25:
+        score = 3
+    elif ratio > 0:
+        score = 2
+    else:
+        score = 1
+
     return {
-        "score": None,
-        "notes": "TODO: Implement score_answer_relevance",
+        "score": score,
+        "notes": f"Query-answer token overlap: {overlap}/{len(query_tokens)} ({ratio:.2f})",
     }
 
 
@@ -198,9 +252,34 @@ def score_completeness(
          Rate completeness 1-5. Are all key points covered?
          Output: {'score': int, 'missing_points': [str]}"
     """
+    if answer.startswith("ERROR:") or answer == "PIPELINE_NOT_IMPLEMENTED":
+        return {"score": 1, "notes": "Pipeline error hoặc chưa implement"}
+
+    if not expected_answer.strip():
+        return {"score": 3, "notes": "Không có expected_answer để so sánh"}
+
+    answer_lower = answer.lower()
+    expected_tokens = [t for t in expected_answer.lower().replace("\n", " ").split() if len(t) >= 4]
+    if not expected_tokens:
+        return {"score": 3, "notes": "Expected answer quá ngắn để chấm"}
+
+    covered = sum(1 for t in expected_tokens if t in answer_lower)
+    ratio = covered / len(expected_tokens)
+
+    if ratio >= 0.75:
+        score = 5
+    elif ratio >= 0.55:
+        score = 4
+    elif ratio >= 0.35:
+        score = 3
+    elif ratio >= 0.2:
+        score = 2
+    else:
+        score = 1
+
     return {
-        "score": None,
-        "notes": "TODO: Implement score_completeness (so sánh với expected_answer)",
+        "score": score,
+        "notes": f"Expected coverage: {covered}/{len(expected_tokens)} ({ratio:.2f})",
     }
 
 
